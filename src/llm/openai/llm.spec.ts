@@ -127,8 +127,15 @@ function newOpenAI(): ChatOpenAI {
   return new ChatOpenAI({ model: 'gpt-4o-mini', apiKey: 'test-key' });
 }
 
-function createStreamModel(mockChunks: RawChunk[]): ChatOpenAI {
-  const model = new ChatOpenAI({ model: 'gpt-4o-mini', apiKey: 'test-key' });
+function createStreamModel(
+  mockChunks: RawChunk[],
+  streaming?: boolean
+): ChatOpenAI {
+  const model = new ChatOpenAI({
+    model: 'gpt-4o-mini',
+    apiKey: 'test-key',
+    ...(streaming == null ? {} : { streaming }),
+  });
   (model as unknown as StreamEventsModel).completions.completionWithRetry =
     async (): Promise<AsyncIterable<RawChunk>> => ({
       async *[Symbol.asyncIterator](): AsyncGenerator<RawChunk> {
@@ -529,6 +536,29 @@ function parallelToolCallChunks(): RawChunk[] {
 }
 
 describe('convertCompletionsMessageToBaseMessage (fork delegate)', () => {
+  it.each([undefined, ''] as const)('retains executable tool calls when a compatible stream has an absent or blank role (%s)', async (role) => {
+    const chunks = toolCallChunks().map((chunk) => ({
+      ...chunk,
+      choices: chunk.choices.map((choice) => {
+        const delta = { ...choice.delta };
+        delta.role = role;
+        return { ...choice, delta };
+      }),
+    }));
+    const result = await createStreamModel(chunks, true).invoke([
+      new HumanMessage('Search for weather'),
+    ]);
+    expect(result.getType()).toBe('ai');
+    expect((result as AIMessageChunk).tool_calls).toEqual([
+      {
+        name: 'web_search',
+        args: { query: 'weather' },
+        id: 'call_abc',
+        type: 'tool_call',
+      },
+    ]);
+  });
+
   it('preserves assistant reasoning_content in additional_kwargs', () => {
     const mockMessage = {
       role: 'assistant' as const,

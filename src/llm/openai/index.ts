@@ -1061,7 +1061,10 @@ type ResponsesAnnotationsBoundaryEvent = {
 export function ensureResponsesOutputAnnotations(
   event: ResponsesAnnotationsBoundaryEvent
 ): void {
-  if (event.type !== 'response.completed' && event.type !== 'response.incomplete') {
+  if (
+    event.type !== 'response.completed' &&
+    event.type !== 'response.incomplete'
+  ) {
     return;
   }
   const output = event.response?.output;
@@ -1306,6 +1309,19 @@ async function* filterOpenAIChatCompletionStream(
   for await (const item of stream) {
     const chunk = getOpenAIChatCompletionChunk(item);
     if (chunk == null) {
+      continue;
+    }
+    // A gateway heartbeat is not a model turn: its shared ID would replace
+    // earlier assistant messages in LangGraph's message reducer.
+    if (
+      chunk.usage == null &&
+      chunk.choices.length > 0 &&
+      chunk.choices.every(
+        (choice) =>
+          choice.finish_reason == null &&
+          Object.keys(choice.delta).length === 0
+      )
+    ) {
       continue;
     }
     yield chunk;
@@ -1937,11 +1953,14 @@ class LibreChatOpenAICompletions extends OriginalChatOpenAICompletions {
     rawResponse: OpenAIClient.Chat.Completions.ChatCompletionChunk,
     defaultRole?: OpenAIClient.Chat.ChatCompletionRole
   ): BaseMessageChunk {
+    const normalizedDelta = typeof delta.role === 'string' && delta.role !== ''
+      ? delta
+      : { ...delta, role: defaultRole || 'assistant' };
     const message = attachLibreChatDeltaFields(
       super._convertCompletionsDeltaToBaseMessageChunk(
-        delta,
+        normalizedDelta,
         rawResponse,
-        defaultRole
+        defaultRole ?? 'assistant'
       ),
       delta
     );
@@ -2347,7 +2366,9 @@ class LibreChatOpenAIResponses extends OriginalChatOpenAIResponses {
         cache_control: cacheControl,
       }),
     };
-    if (shouldIncludeEncryptedReasoning(this.model, params, this.astraRulesApply)) {
+    if (
+      shouldIncludeEncryptedReasoning(this.model, params, this.astraRulesApply)
+    ) {
       params.include = [
         ...new Set([
           ...(params.include ?? []),
@@ -2630,7 +2651,9 @@ class LibreChatAzureOpenAIResponses extends OriginalAzureChatOpenAIResponses {
       promptCacheExplicit: this.promptCacheExplicit,
       safetyIdentifier: this.safetyIdentifier,
     });
-    if (shouldIncludeEncryptedReasoning(this.model, params, this.astraRulesApply)) {
+    if (
+      shouldIncludeEncryptedReasoning(this.model, params, this.astraRulesApply)
+    ) {
       params.include = [
         ...new Set([
           ...(params.include ?? []),
