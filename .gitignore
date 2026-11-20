@@ -17,3 +17,5 @@ coverage/**/*
 .claude/
 .codex/
 src/scripts/activity-labels/results/
+
+.DS_Store
